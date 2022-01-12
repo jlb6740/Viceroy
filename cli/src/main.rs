@@ -15,8 +15,8 @@
 
 use crate::debugger::DebugAdapter;
 
-mod opts;
 mod debugger;
+mod opts;
 
 use {
     crate::opts::Opts,
@@ -44,6 +44,20 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
         .with_log_stderr(opts.log_stderr() || opts.debug_adapter())
         .with_log_stdout(opts.log_stdout() || opts.debug_adapter());
 
+    // Configure the execution context
+    ctx = configure_ctx(ctx, &opts).await?;
+
+    let service = ViceroyService::new(ctx);
+    let addr = opts.addr();
+
+    event!(Level::INFO, "Listening on http://{}", addr);
+    service.serve(addr).await?;
+
+    unreachable!()
+}
+
+// Configures the given `ExecuteCtx` using parameters from the given `Opts`.
+pub async fn configure_ctx(mut ctx: ExecuteCtx, opts: &Opts) -> Result<ExecuteCtx, Error> {
     if let Some(config_path) = opts.config_path() {
         let config = FastlyConfig::from_file(config_path)?;
         let backends = config.backends();
@@ -101,25 +115,7 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
         );
     }
 
-    let addr = opts.addr();
-
-    if opts.debug_adapter() {
-        event!(Level::INFO, "Starting debug server");
-
-        // Create debug adapter with the configured guest address
-        let debugger = DebugAdapter::new(ctx, addr);
-
-        // Start the debugger
-        debugger.serve()?;
-
-    } else {
-        let service = ViceroyService::new(ctx);
-
-        event!(Level::INFO, "Listening on http://{}", addr);
-        service.serve(addr).await?;
-    }
-
-    unreachable!()
+    Ok(ctx)
 }
 
 #[tokio::main]
@@ -127,10 +123,20 @@ pub async fn main() -> Result<(), Error> {
     // Parse the command-line options, exiting if there are any errors
     let opts = Opts::from_args();
 
-    //install_tracing_subscriber(&opts);
+    if !opts.debug_adapter() {
+        install_tracing_subscriber(&opts);
 
-    if let Err(e) = serve(opts).await {
-        event!(Level::ERROR, "{}", e);
+        if let Err(e) = serve(opts).await {
+            event!(Level::ERROR, "{}", e);
+        }
+    } else {
+        event!(Level::INFO, "Starting debug server");
+
+        // Create debug adapter with the configured guest address
+        let debugger = DebugAdapter::new(Box::new(|ctx| ctx));
+
+        // Start the debugger
+        debugger.serve()?;
     }
 
     Ok(())
