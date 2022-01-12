@@ -3,11 +3,35 @@ name: Main
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      matrix:
+        rust-toolchain: [stable]
+        os: [ubuntu-latest, macos-11, windows-latest]
+        arch: [amd64, arm64]
+        exclude:
+          - os: windows-latest
+            arch: arm64
+        include:
+          - os: ubuntu-latest
+            name: linux
+            rust_abi: unknown-linux-gnu
+          - os: macos-11
+            name: darwin
+            rust_abi: apple-darwin
+          - os: windows-latest
+            name: windows
+            rust_abi: pc-windows-msvc
+            extension: .exe
+          - arch: arm64
+            rust_arch: aarch64
+          - arch: amd64
+            rust_arch: x86_64
+
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -17,60 +41,47 @@ jobs:
       - name: Install latest Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: ${{ matrix.rust-toolchain }}
+          target: ${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
           default: true
           override: true
+
+      - name: Install C cross-compilation toolchain
+        if: ${{ matrix.name == 'linux' && matrix.arch != 'amd64' }}
+        run: |
+          sudo apt install -f -y gcc-${{ matrix.rust_arch }}-linux-gnu
+          echo CC=${{ matrix.rust_arch }}-linux-gnu-gcc >> $GITHUB_ENV
+          echo RUSTFLAGS='-C linker=${{ matrix.rust_arch }}-linux-gnu-gcc' >> $GITHUB_ENV
 
       - name: Extract tag name
         uses: olegtarasov/get-tag@v2.1
         id: tagName
 
-      - name: Build and package
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --all --locked --target=${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
+
+      - name: Strip symbols (linux)
+        if: ${{ matrix.name == 'linux' }}
         run: |
-          cargo build --all --release --locked
-          cd target/release
-          strip viceroy
-          tar czf viceroy_${{ steps.tagName.outputs.tag }}_linux-amd64.tar.gz viceroy
+          ${{ matrix.rust_arch }}-linux-gnu-strip target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy${{ matrix.extension }}
+
+      - name: Strip symbols (non-linux)
+        if: ${{ matrix.name != 'linux' }}
+        run: |
+          strip target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy${{ matrix.extension }}
+
+      - name: Package
+        run: |
+          cd target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release
+          tar czf viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz viceroy${{ matrix.extension }}
 
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            target/release/viceroy_${{ steps.tagName.outputs.tag }}_linux-amd64.tar.gz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build-mac:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          submodules: true
-
-      - name: Install latest Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: x86_64-apple-darwin
-          default: true
-          override: true
-
-      - name: Extract tag name
-        uses: olegtarasov/get-tag@v2.1
-        id: tagName
-
-      - name: Build and package
-        run: |
-          cargo build --all --release --locked
-          cd target/release
-          strip viceroy
-          tar czf viceroy_${{ steps.tagName.outputs.tag }}_darwin-amd64.tar.gz viceroy
-
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            target/release/viceroy_${{ steps.tagName.outputs.tag }}_darwin-amd64.tar.gz
+            target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

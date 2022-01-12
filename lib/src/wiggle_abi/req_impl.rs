@@ -9,7 +9,7 @@ use {
             fastly_http_req::FastlyHttpReq,
             headers::HttpHeaders,
             types::{
-                BodyHandle, CacheOverrideTag, HttpVersion, MultiValueCursor,
+                BodyHandle, CacheOverrideTag, ContentEncodings, HttpVersion, MultiValueCursor,
                 MultiValueCursorResult, PendingRequestHandle, RequestHandle, ResponseHandle,
             },
         },
@@ -346,7 +346,7 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // synchronously send the request
-        let resp = upstream::send_request(req, backend)?.await?;
+        let resp = upstream::send_request(req, backend, self.tls_config()).await?;
         Ok(self.insert_response(resp))
     }
 
@@ -368,7 +368,8 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // asynchronously send the request
-        let pending_req = PendingRequest::spawn(upstream::send_request(req, backend)?);
+        let pending_req =
+            PendingRequest::spawn(upstream::send_request(req, backend, self.tls_config()));
 
         // return a handle to the pending request
         Ok(self.insert_pending_request(pending_req))
@@ -392,7 +393,8 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // asynchronously send the request
-        let pending_req = PendingRequest::spawn(upstream::send_request(req, backend)?);
+        let pending_req =
+            PendingRequest::spawn(upstream::send_request(req, backend, self.tls_config()));
 
         // return a handle to the pending request
         Ok(self.insert_pending_request(pending_req))
@@ -464,5 +466,17 @@ impl FastlyHttpReq for Session {
         // the handle given doesn't exist
         self.take_request_parts(req_handle)?;
         Ok(())
+    }
+
+    fn auto_decompress_response_set(
+        &mut self,
+        _h: RequestHandle,
+        encodings: ContentEncodings,
+    ) -> Result<(), Error> {
+        if u32::from(encodings) == 1 {
+            unimplemented!("calling auto_decompress_response_set with GZIP has not yet been implemented in Viceroy");
+        } else {
+            Ok(())
+        }
     }
 }

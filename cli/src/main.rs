@@ -21,7 +21,6 @@ mod opts;
 use {
     crate::opts::Opts,
     hyper::{client::Client, Body, Request},
-    hyper_tls::HttpsConnector,
     std::{
         env,
         io::{self, Stderr, Stdout},
@@ -31,7 +30,7 @@ use {
     tokio::time::timeout,
     tracing::{event, Level, Metadata},
     tracing_subscriber::{filter::EnvFilter, fmt::writer::MakeWriter, FmtSubscriber},
-    viceroy_lib::{config::FastlyConfig, Error, ExecuteCtx, ViceroyService},
+    viceroy_lib::{config::FastlyConfig, BackendConnector, Error, ExecuteCtx, ViceroyService},
 };
 
 /// Starts up a Viceroy server.
@@ -77,8 +76,9 @@ pub async fn configure_ctx(mut ctx: ExecuteCtx, opts: &Opts) -> Result<ExecuteCt
             );
         }
 
-        let client = Client::builder().build(HttpsConnector::new());
         for (name, backend) in backends.iter() {
+            let client =
+                Client::builder().build(BackendConnector::new(backend, ctx.tls_config().clone()));
             let req = Request::get(&backend.uri).body(Body::empty()).unwrap();
 
             event!(Level::INFO, "checking if backend '{}' is up", name);
@@ -126,8 +126,16 @@ pub async fn main() -> Result<(), Error> {
     if !opts.debug_adapter() {
         install_tracing_subscriber(&opts);
 
-        if let Err(e) = serve(opts).await {
-            event!(Level::ERROR, "{}", e);
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                Ok(())
+            }
+            res = serve(opts) => {
+                if let Err(ref e) = res {
+                    event!(Level::ERROR, "{}", e);
+                }
+                res
+            }
         }
     } else {
         event!(Level::INFO, "Starting debug server");
@@ -137,9 +145,9 @@ pub async fn main() -> Result<(), Error> {
 
         // Start the debugger
         debugger.serve()?;
-    }
 
-    Ok(())
+        Ok(())
+    }
 }
 
 fn install_tracing_subscriber(opts: &Opts) {

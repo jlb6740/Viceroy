@@ -1,5 +1,35 @@
 ## Unreleased
 
+## 0.2.9 (2022-01-11)
+
+- Do not panic when `auto_decompress_response_set` is called ([#116](https://github.com/fastly/Viceroy/pull/116))
+
+## 0.2.8 (2022-01-07)
+
+- Allow partial CA store to be loaded ([#104](https://github.com/fastly/Viceroy/pull/104))
+- Update ABI and stub out new function ([#113](https://github.com/fastly/Viceroy/pull/104))
+
+## 0.2.7 (2021-12-01)
+
+- Disable ALPN by using rustls more directly ([#100](https://github.com/fastly/Viceroy/pull/100))
+
+## 0.2.6 (2021-11-15)
+
+- Catch interrupt signals ([#85](https://github.com/fastly/Viceroy/pull/85))
+- Include aarch64 tarballs for Linux and macOS ([#88](https://github.com/fastly/Viceroy/pull/88))
+- Align URI and Host header semantics with production C@E ([#90](https://github.com/fastly/Viceroy/pull/90))
+
+## 0.2.5 (2021-10-21)
+
+- Replaced `hyper-tls` with `hyper-rustls`. ([#75](https://github.com/fastly/Viceroy/pull/75))
+- Unknown dictionary items are now logged at debug level. ([#80](https://github.com/fastly/Viceroy/pull/80))
+- Windows releases are now built in CI. ([#82](https://github.com/fastly/Viceroy/pull/82))
+
+## 0.2.4 (2021-09-08)
+
+- Improved error messages when a file could not be read. ([#70](https://github.com/fastly/Viceroy/pull/70))
+- Fixed a bug for dictionary lookups that returned and error rather than `None`. ([#69](https://github.com/fastly/Viceroy/pull/69))
+
 ## 0.2.3 (2021-08-23)
 
 ### Additions
